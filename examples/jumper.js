@@ -55,7 +55,7 @@ bot.on('chat', (username, message) => {
       bot.setControlState('jump', false)
       break
     case 'attack':
-      entity = nearestEntity()
+      entity = bot.nearestEntity()
       if (entity) {
         bot.attack(entity, true)
       } else {
@@ -63,7 +63,7 @@ bot.on('chat', (username, message) => {
       }
       break
     case 'mount':
-      entity = nearestEntity('object')
+      entity = bot.nearestEntity((entity) => { return entity.name === 'minecart' })
       if (entity) {
         bot.mount(entity)
       } else {
@@ -108,28 +108,9 @@ bot.once('spawn', () => {
 })
 
 bot.on('mount', () => {
-  bot.chat(`mounted ${bot.vehicle.objectType}`)
+  bot.chat(`mounted ${bot.vehicle.displayName}`)
 })
 
 bot.on('dismount', (vehicle) => {
-  bot.chat(`dismounted ${vehicle.objectType}`)
+  bot.chat(`dismounted ${vehicle.displayName}`)
 })
-
-function nearestEntity (type) {
-  let id
-  let entity
-  let dist
-  let best = null
-  let bestDistance = null
-  for (id in bot.entities) {
-    entity = bot.entities[id]
-    if (type && entity.type !== type) continue
-    if (entity === bot.entity) continue
-    dist = bot.entity.position.distanceTo(entity.position)
-    if (!best || dist < bestDistance) {
-      best = entity
-      bestDistance = dist
-    }
-  }
-  return best
-}

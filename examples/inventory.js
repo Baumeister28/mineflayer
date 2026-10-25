@@ -22,10 +22,14 @@ const bot = mineflayer.createBot({
   password: process.argv[5]
 })
 
-bot.on('chat', (username, message) => {
+bot.on('chat', async (username, message) => {
   if (username === bot.username) return
   const command = message.split(' ')
   switch (true) {
+    case message === 'loaded':
+      await bot.waitForChunksToLoad()
+      bot.chat('Ready!')
+      break
     case /^list$/.test(message):
       sayItems()
       break
@@ -39,7 +43,7 @@ bot.on('chat', (username, message) => {
       // ex: toss diamond
       tossItem(command[1])
       break
-    case /^equip \w+ \w+$/.test(message):
+    case /^equip [\w-]+ \w+$/.test(message):
       // equip destination name
       // ex: equip hand diamond
       equipItem(command[2], command[1])
@@ -60,7 +64,11 @@ bot.on('chat', (username, message) => {
   }
 })
 
-function sayItems (items = bot.inventory.items()) {
+function sayItems (items = null) {
+  if (!items) {
+    items = bot.inventory.items()
+    if (bot.registry.isNewerOrEqualTo('1.9') && bot.inventory.slots[45]) items.push(bot.inventory.slots[45])
+  }
   const output = items.map(itemToString).join(', ')
   if (output) {
     bot.chat(output)
@@ -69,53 +77,47 @@ function sayItems (items = bot.inventory.items()) {
   }
 }
 
-function tossItem (name, amount) {
+async function tossItem (name, amount) {
   amount = parseInt(amount, 10)
   const item = itemByName(name)
   if (!item) {
     bot.chat(`I have no ${name}`)
-  } else if (amount) {
-    bot.toss(item.type, null, amount, checkIfTossed)
   } else {
-    bot.tossStack(item, checkIfTossed)
-  }
-
-  function checkIfTossed (err) {
-    if (err) {
+    try {
+      if (amount) {
+        await bot.toss(item.type, null, amount)
+        bot.chat(`tossed ${amount} x ${name}`)
+      } else {
+        await bot.tossStack(item)
+        bot.chat(`tossed ${name}`)
+      }
+    } catch (err) {
       bot.chat(`unable to toss: ${err.message}`)
-    } else if (amount) {
-      bot.chat(`tossed ${amount} x ${name}`)
-    } else {
-      bot.chat(`tossed ${name}`)
     }
   }
 }
 
-function equipItem (name, destination) {
+async function equipItem (name, destination) {
   const item = itemByName(name)
   if (item) {
-    bot.equip(item, destination, checkIfEquipped)
+    try {
+      await bot.equip(item, destination)
+      bot.chat(`equipped ${name}`)
+    } catch (err) {
+      bot.chat(`cannot equip ${name}: ${err.message}`)
+    }
   } else {
     bot.chat(`I have no ${name}`)
   }
-
-  function checkIfEquipped (err) {
-    if (err) {
-      bot.chat(`cannot equip ${name}: ${err.message}`)
-    } else {
-      bot.chat(`equipped ${name}`)
-    }
-  }
 }
 
-function unequipItem (destination) {
-  bot.unequip(destination, (err) => {
-    if (err) {
-      bot.chat(`cannot unequip: ${err.message}`)
-    } else {
-      bot.chat('unequipped')
-    }
-  })
+async function unequipItem (destination) {
+  try {
+    await bot.unequip(destination)
+    bot.chat('unequipped')
+  } catch (err) {
+    bot.chat(`cannot unequip: ${err.message}`)
+  }
 }
 
 function useEquippedItem () {
@@ -123,24 +125,25 @@ function useEquippedItem () {
   bot.activateItem()
 }
 
-function craftItem (name, amount) {
+async function craftItem (name, amount) {
   amount = parseInt(amount, 10)
-  const item = require('minecraft-data')(bot.version).findItemOrBlockByName(name)
+  const item = bot.registry.itemsByName[name]
+  const craftingTableID = bot.registry.blocksByName.crafting_table.id
+
   const craftingTable = bot.findBlock({
-    matching: 58
+    matching: craftingTableID
   })
 
   if (item) {
     const recipe = bot.recipesFor(item.id, null, 1, craftingTable)[0]
     if (recipe) {
       bot.chat(`I can make ${name}`)
-      bot.craft(recipe, amount, craftingTable, (err) => {
-        if (err) {
-          bot.chat(`error making ${name}`)
-        } else {
-          bot.chat(`did the recipe for ${name} ${amount} times`)
-        }
-      })
+      try {
+        await bot.craft(recipe, amount, craftingTable)
+        bot.chat(`did the recipe for ${name} ${amount} times`)
+      } catch (err) {
+        bot.chat(`error making ${name}`)
+      }
     } else {
       bot.chat(`I cannot make ${name}`)
     }
@@ -158,5 +161,7 @@ function itemToString (item) {
 }
 
 function itemByName (name) {
-  return bot.inventory.items().filter(item => item.name === name)[0]
+  const items = bot.inventory.items()
+  if (bot.registry.isNewerOrEqualTo('1.9') && bot.inventory.slots[45]) items.push(bot.inventory.slots[45])
+  return items.filter(item => item.name === name)[0]
 }

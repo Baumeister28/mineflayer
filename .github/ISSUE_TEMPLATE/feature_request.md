@@ -2,17 +2,10 @@
 name: Feature request
 about: Suggest an idea for this project
 title: ''
-labels: new feature
+labels: new feature,Stage1
 assignees: ''
 
 ---
-
-<!--
-IF YOU ARE POSTING A QUESTION HOW TO USE MINEFLAYER,
-PLEASE ASK ON OUR DISCORD SERVER.
-
-https://discord.gg/eybmzRR
--->
 
 ## Is your feature request related to a problem? Please describe.
 A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]

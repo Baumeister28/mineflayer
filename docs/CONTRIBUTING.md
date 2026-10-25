@@ -4,6 +4,16 @@ Mineflayer has originally been made mostly by [andrewrk](http://github.com/andre
 but has since then be improved and fixed by many [contributors](https://github.com/andrewrk/mineflayer/graphs/contributors).
 That's why it is important to know the best ways to contribute to mineflayer.
 
+## Issue organization
+
+We have 3 stage labels to try to organize issues:
+
+* Stage 1: just created by someone new to the project, we don't know yet if it deserves an implementation / a fix
+* Stage 2: promising idea, but needs more thinking before implementation
+* Stage 3: idea is precisely specified, only coding is left to do
+
+Links like https://github.com/PrismarineJS/mineflayer/issues?q=is%3Aopen+is%3Aissue+-label%3AStage1 can be used to filter out stage 1 if you're looking for things that are ready for contribution
+
 ## Creating tests
 Mineflayer has two kind of tests :
 
@@ -12,11 +22,27 @@ Mineflayer has two kind of tests :
  
 The objective of these tests is to know automatically what works and what doesn't in mineflayer, so it's easier to make mineflayer work.
 
+
+## Running tests
+You can run tests for Different Minecraft versions using the `-g` flag with npm run mocha_test. For example:
+
+```bash
+# Run all tests in all supported versions
+npm run test
+
+# Run a specific test in Minecraft 1.20.4
+npm run mocha_test -- -g "mineflayer_external 1.20.4v.*exampleBee"
+
+# Run all tests in just version 1.20.4
+npm run mocha_test -- -g "mineflayer_external 1.20.4v"
+```
+
+
 ### Creating an external test
 
 In order to add an external test now you only need to create a file in [test/externalTests](test/externalTests)
 
-An example : [test/externalTests/digAndBuild.js](test/externalTests/digAndBuild.js)
+An example : [test/externalTests/digAndBuild.js](https://github.com/PrismarineJS/mineflayer/blob/master/test/externalTests/digAndBuild.js)
 
 That file needs to export a function returning a function or an array of function taking as parameter the bot object and a done callback,
  it should contain asserts to test if the tested functionality failed.
@@ -59,13 +85,15 @@ What that means is we shouldn't use `throw(new Error("error"))` but instead use 
 For example : 
 
 ```js
-function myfunction(param1,callback)
-{
+function myfunction (param1, callback) {
   // do stuff
-  if(/* everything worked*/)
-    callback();
-  else
-    callback(new Error("something failed"));
+  let toDo = 1
+  toDo = 2
+  if (toDo === 2) { // everything worked
+    callback()
+  } else {
+    callback(new Error('something failed'))
+  }
 }
 ```
 

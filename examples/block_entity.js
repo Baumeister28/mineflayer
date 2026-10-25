@@ -16,11 +16,6 @@ const bot = mineflayer.createBot({
   password: process.argv[5]
 })
 
-let mcData
-bot.on('inject_allowed', () => {
-  mcData = require('minecraft-data')(bot.version)
-})
-
 bot.on('message', (cm) => {
   if (cm.toString().includes('spawner')) {
     spawner()
@@ -28,7 +23,12 @@ bot.on('message', (cm) => {
 })
 
 function spawner () {
-  const blockName = (bot.majorVersion === '1.13') ? mcData.blocksByName.spawner.id : mcData.blocksByName.mob_spawner.id
+  let blockName
+  if (bot.supportFeature('mobSpawner')) {
+    blockName = bot.registry.blocksByName.mob_spawner.id
+  } else if (bot.supportFeature('spawner')) {
+    blockName = bot.registry.blocksByName.spawner.id
+  }
   const block = bot.findBlock({
     matching: blockName,
     point: bot.entity.position

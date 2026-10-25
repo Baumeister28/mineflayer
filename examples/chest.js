@@ -33,11 +33,6 @@ const bot = mineflayer.createBot({
   password: process.argv[5]
 })
 
-let mcData
-bot.once('inject_allowed', () => {
-  mcData = require('minecraft-data')(bot.version)
-})
-
 bot.on('experience', () => {
   bot.chat(`I am level ${bot.experience.level}`)
 })
@@ -49,13 +44,13 @@ bot.on('chat', (username, message) => {
       sayItems()
       break
     case /^chest$/.test(message):
-      watchChest()
+      watchChest(false, ['chest', 'ender_chest', 'trapped_chest'])
       break
     case /^furnace$/.test(message):
       watchFurnace()
       break
     case /^dispenser$/.test(message):
-      watchDispenser()
+      watchChest(false, ['dispenser'])
       break
     case /^enchant$/.test(message):
       watchEnchantmentTable()
@@ -82,11 +77,11 @@ function sayItems (items = bot.inventory.items()) {
   }
 }
 
-function watchChest (minecart) {
+async function watchChest (minecart, blocks = []) {
   let chestToOpen
   if (minecart) {
     chestToOpen = Object.keys(bot.entities)
-      .map(id => bot.entities[id]).find(e => e.entityType === mcData.entitiesByName.chest_minecart &&
+      .map(id => bot.entities[id]).find(e => e.entityType === bot.registry.entitiesByName.chest_minecart &&
       e.objectData.intField === 1 &&
       bot.entity.position.distanceTo(e.position) < 3)
     if (!chestToOpen) {
@@ -95,19 +90,18 @@ function watchChest (minecart) {
     }
   } else {
     chestToOpen = bot.findBlock({
-      matching: ['chest', 'ender_chest', 'trapped_chest'].map(name => mcData.blocksByName[name].id)
+      matching: blocks.map(name => bot.registry.blocksByName[name].id),
+      maxDistance: 6
     })
     if (!chestToOpen) {
       bot.chat('no chest found')
       return
     }
   }
-  const chest = bot.openChest(chestToOpen)
-  chest.on('open', () => {
-    sayItems(chest.items())
-  })
-  chest.on('updateSlot', (oldItem, newItem) => {
-    bot.chat(`chest update: ${itemToString(oldItem)} -> ${itemToString(newItem)}`)
+  const chest = await bot.openContainer(chestToOpen)
+  sayItems(chest.containerItems())
+  chest.on('updateSlot', (slot, oldItem, newItem) => {
+    bot.chat(`chest update: ${itemToString(oldItem)} -> ${itemToString(newItem)} (slot: ${slot})`)
   })
   chest.on('close', () => {
     bot.chat('chest closed')
@@ -140,55 +134,53 @@ function watchChest (minecart) {
     bot.removeListener('chat', onChat)
   }
 
-  function withdrawItem (name, amount) {
-    const item = itemByName(chest.items(), name)
+  async function withdrawItem (name, amount) {
+    const item = itemByName(chest.containerItems(), name)
     if (item) {
-      chest.withdraw(item.type, null, amount, (err) => {
-        if (err) {
-          bot.chat(`unable to withdraw ${amount} ${item.name}`)
-        } else {
-          bot.chat(`withdrew ${amount} ${item.name}`)
-        }
-      })
+      try {
+        await chest.withdraw(item.type, null, amount)
+        bot.chat(`withdrew ${amount} ${item.name}`)
+      } catch (err) {
+        bot.chat(`unable to withdraw ${amount} ${item.name}`)
+      }
     } else {
       bot.chat(`unknown item ${name}`)
     }
   }
 
-  function depositItem (name, amount) {
-    const item = itemByName(bot.inventory.items(), name)
+  async function depositItem (name, amount) {
+    const item = itemByName(chest.items(), name)
     if (item) {
-      chest.deposit(item.type, null, amount, (err) => {
-        if (err) {
-          bot.chat(`unable to deposit ${amount} ${item.name}`)
-        } else {
-          bot.chat(`deposited ${amount} ${item.name}`)
-        }
-      })
+      try {
+        await chest.deposit(item.type, null, amount)
+        bot.chat(`deposited ${amount} ${item.name}`)
+      } catch (err) {
+        bot.chat(`unable to deposit ${amount} ${item.name}`)
+      }
     } else {
       bot.chat(`unknown item ${name}`)
     }
   }
 }
 
-function watchFurnace () {
+async function watchFurnace () {
   const furnaceBlock = bot.findBlock({
-    matching: ['furnace', 'lit_furnace'].filter(name => mcData.blocksByName[name] !== undefined).map(name => mcData.blocksByName[name].id)
+    matching: ['furnace', 'lit_furnace'].filter(name => bot.registry.blocksByName[name] !== undefined).map(name => bot.registry.blocksByName[name].id),
+    maxDistance: 6
   })
   if (!furnaceBlock) {
     bot.chat('no furnace found')
     return
   }
-  const furnace = bot.openFurnace(furnaceBlock)
-  furnace.on('open', () => {
-    let output = ''
-    output += `input: ${itemToString(furnace.inputItem())}, `
-    output += `fuel: ${itemToString(furnace.fuelItem())}, `
-    output += `output: ${itemToString(furnace.outputItem())}`
-    bot.chat(output)
-  })
-  furnace.on('updateSlot', (oldItem, newItem) => {
-    bot.chat(`furnace update: ${itemToString(oldItem)} -> ${itemToString(newItem)}`)
+  const furnace = await bot.openFurnace(furnaceBlock)
+  let output = ''
+  output += `input: ${itemToString(furnace.inputItem())}, `
+  output += `fuel: ${itemToString(furnace.fuelItem())}, `
+  output += `output: ${itemToString(furnace.outputItem())}`
+  bot.chat(output)
+
+  furnace.on('updateSlot', (slot, oldItem, newItem) => {
+    bot.chat(`furnace update: ${itemToString(oldItem)} -> ${itemToString(newItem)} (slot: ${slot})`)
   })
   furnace.on('close', () => {
     bot.chat('furnace closed')
@@ -223,133 +215,54 @@ function watchFurnace () {
       bot.removeListener('chat', onChat)
     }
 
-    function putInFurnace (where, name, amount) {
-      const item = itemByName(bot.inventory.items(), name)
+    async function putInFurnace (where, name, amount) {
+      const item = itemByName(furnace.items(), name)
       if (item) {
         const fn = {
           input: furnace.putInput,
           fuel: furnace.putFuel
         }[where]
-        fn.call(furnace, item.type, null, amount, (err) => {
-          if (err) {
-            bot.chat(`unable to put ${amount} ${item.name}`)
-          } else {
-            bot.chat(`put ${amount} ${item.name}`)
-          }
-        })
+        try {
+          await fn.call(furnace, item.type, null, amount)
+          bot.chat(`put ${amount} ${item.name}`)
+        } catch (err) {
+          bot.chat(`unable to put ${amount} ${item.name}`)
+        }
       } else {
         bot.chat(`unknown item ${name}`)
       }
     }
 
-    function takeFromFurnace (what) {
+    async function takeFromFurnace (what) {
       const fn = {
         input: furnace.takeInput,
         fuel: furnace.takeFuel,
         output: furnace.takeOutput
       }[what]
-      fn.call(furnace, (err, item) => {
-        if (err) {
-          bot.chat(`unable to take ${item.name}`)
-        } else {
-          bot.chat(`took ${item.name}`)
-        }
-      })
+      try {
+        const item = await fn.call(furnace)
+        bot.chat(`took ${item.name}`)
+      } catch (err) {
+        bot.chat('unable to take')
+      }
     }
   }
 }
 
-function watchDispenser () {
-  const dispenserBlock = bot.findBlock({
-    matching: ['dispenser'].map(name => mcData.blocksByName[name].id)
-  })
-  if (!dispenserBlock) {
-    bot.chat('no dispenser found')
-    return
-  }
-  const dispenser = bot.openDispenser(dispenserBlock)
-  dispenser.on('open', () => {
-    sayItems(dispenser.items())
-  })
-  dispenser.on('updateSlot', (oldItem, newItem) => {
-    bot.chat(`dispenser update: ${itemToString(oldItem)} -> ${itemToString(newItem)}`)
-  })
-  dispenser.on('close', () => {
-    bot.chat('dispenser closed')
-  })
-
-  bot.on('chat', onChat)
-
-  function onChat (username, message) {
-    if (username === bot.username) return
-    const command = message.split(' ')
-    switch (true) {
-      case /^close$/.test(message):
-        closeDispenser()
-        break
-      case /^withdraw \d+ \w+$/.test(message):
-        // withdraw amount name
-        // ex: withdraw 16 stick
-        withdrawItem(command[2], command[1])
-        break
-      case /^deposit \d+ \w+$/.test(message):
-        // deposit amount name
-        // ex: deposit 16 stick
-        depositItem(command[2], command[1])
-        break
-    }
-  }
-
-  function closeDispenser () {
-    dispenser.close()
-    bot.removeListener('chat', onChat)
-  }
-
-  function withdrawItem (name, amount) {
-    const item = itemByName(dispenser.items(), name)
-    if (item) {
-      dispenser.withdraw(item.type, null, amount, (err) => {
-        if (err) {
-          bot.chat(`unable to withdraw ${amount} ${item.name}`)
-        } else {
-          bot.chat(`withdrew ${amount} ${item.name}`)
-        }
-      })
-    } else {
-      bot.chat(`unknown item ${name}`)
-    }
-  }
-
-  function depositItem (name, amount) {
-    const item = itemByName(bot.inventory.items(), name)
-    if (item) {
-      dispenser.deposit(item.type, null, amount, (err) => {
-        if (err) {
-          bot.chat(`unable to deposit ${amount} ${item.name}`)
-        } else {
-          bot.chat(`deposited ${amount} ${item.name}`)
-        }
-      })
-    } else {
-      bot.chat(`unknown item ${name}`)
-    }
-  }
-}
-
-function watchEnchantmentTable () {
+async function watchEnchantmentTable () {
   const enchantTableBlock = bot.findBlock({
-    matching: ['enchanting_table'].map(name => mcData.blocksByName[name].id)
+    matching: ['enchanting_table'].map(name => bot.registry.blocksByName[name].id),
+    maxDistance: 6
   })
   if (!enchantTableBlock) {
     bot.chat('no enchantment table found')
     return
   }
-  const table = bot.openEnchantmentTable(enchantTableBlock)
-  table.on('open', () => {
-    bot.chat(itemToString(table.targetItem()))
-  })
-  table.on('updateSlot', (oldItem, newItem) => {
-    bot.chat(`enchantment table update: ${itemToString(oldItem)} -> ${itemToString(newItem)}`)
+  const table = await bot.openEnchantmentTable(enchantTableBlock)
+  bot.chat(itemToString(table.targetItem()))
+
+  table.on('updateSlot', (slot, oldItem, newItem) => {
+    bot.chat(`enchantment table update: ${itemToString(oldItem)} -> ${itemToString(newItem)} (slot: ${slot})`)
   })
   table.on('close', () => {
     bot.chat('enchantment table closed')
@@ -389,56 +302,52 @@ function watchEnchantmentTable () {
       table.close()
     }
 
-    function putItem (name) {
+    async function putItem (name) {
       const item = itemByName(table.window.items(), name)
       if (item) {
-        table.putTargetItem(item, (err) => {
-          if (err) {
-            bot.chat(`error putting ${itemToString(item)}`)
-          } else {
-            bot.chat(`I put ${itemToString(item)}`)
-          }
-        })
+        try {
+          await table.putTargetItem(item)
+          bot.chat(`I put ${itemToString(item)}`)
+        } catch (err) {
+          bot.chat(`error putting ${itemToString(item)}`)
+        }
       } else {
         bot.chat(`unknown item ${name}`)
       }
     }
 
-    function addLapis () {
-      const item = itemByType(table.window.items(), ['dye', 'purple_dye'].filter(name => mcData.itemByName[name] !== undefined)
-        .map(name => mcData.itemByName[name].id))
+    async function addLapis () {
+      const item = itemByType(table.window.items(), ['dye', 'purple_dye', 'lapis_lazuli'].filter(name => bot.registry.itemByName[name] !== undefined)
+        .map(name => bot.registry.itemByName[name].id))
       if (item) {
-        table.putLapis(item, (err) => {
-          if (err) {
-            bot.chat(`error putting ${itemToString(item)}`)
-          } else {
-            bot.chat(`I put ${itemToString(item)}`)
-          }
-        })
+        try {
+          await table.putLapis(item)
+          bot.chat(`I put ${itemToString(item)}`)
+        } catch (err) {
+          bot.chat(`error putting ${itemToString(item)}`)
+        }
       } else {
         bot.chat("I don't have any lapis")
       }
     }
 
-    function enchantItem (choice) {
+    async function enchantItem (choice) {
       choice = parseInt(choice, 10)
-      table.enchant(choice, (err, item) => {
-        if (err) {
-          bot.chat('error enchanting')
-        } else {
-          bot.chat(`enchanted ${itemToString(item)}`)
-        }
-      })
+      try {
+        const item = await table.enchant(choice)
+        bot.chat(`enchanted ${itemToString(item)}`)
+      } catch (err) {
+        bot.chat('error enchanting')
+      }
     }
 
-    function takeEnchantedItem () {
-      table.takeTargetItem((err, item) => {
-        if (err) {
-          bot.chat('error getting item')
-        } else {
-          bot.chat(`got ${itemToString(item)}`)
-        }
-      })
+    async function takeEnchantedItem () {
+      try {
+        const item = await table.takeTargetItem()
+        bot.chat(`got ${itemToString(item)}`)
+      } catch (err) {
+        bot.chat('error getting item')
+      }
     }
   }
 }

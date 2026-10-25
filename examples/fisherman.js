@@ -12,11 +12,6 @@ const bot = mineflayer.createBot({
   password: process.argv[5]
 })
 
-let mcData
-bot.on('inject_allowed', () => {
-  mcData = require('minecraft-data')(bot.version)
-})
-
 // To fish we have to give bot the fishing rod and teleport bot to the water
 // /give fisherman fishing_rod 1
 // /teleport fisherman ~ ~ ~
@@ -47,24 +42,23 @@ function onCollect (player, entity) {
   }
 }
 
-function startFishing () {
+async function startFishing () {
   bot.chat('Fishing')
-  bot.equip(mcData.itemsByName.fishing_rod.id, 'hand', (err) => {
-    if (err) {
-      return bot.chat(err.message)
-    }
+  try {
+    await bot.equip(bot.registry.itemsByName.fishing_rod.id, 'hand')
+  } catch (err) {
+    return bot.chat(err.message)
+  }
 
-    nowFishing = true
-    bot.on('playerCollect', onCollect)
+  nowFishing = true
+  bot.on('playerCollect', onCollect)
 
-    bot.fish((err) => {
-      nowFishing = false
-
-      if (err) {
-        bot.chat(err.message)
-      }
-    })
-  })
+  try {
+    await bot.fish()
+  } catch (err) {
+    bot.chat(err.message)
+  }
+  nowFishing = false
 }
 
 function stopFishing () {
@@ -75,18 +69,18 @@ function stopFishing () {
   }
 }
 
-function eat () {
+async function eat () {
   stopFishing()
 
-  bot.equip(mcData.itemsByName.fish.id, 'hand', (err) => {
-    if (err) {
-      return bot.chat(err.message)
-    }
+  try {
+    await bot.equip(bot.registry.itemsByName.fish.id, 'hand')
+  } catch (err) {
+    return bot.chat(err.message)
+  }
 
-    bot.consume((err) => {
-      if (err) {
-        return bot.chat(err.message)
-      }
-    })
-  })
+  try {
+    await bot.consume()
+  } catch (err) {
+    return bot.chat(err.message)
+  }
 }
